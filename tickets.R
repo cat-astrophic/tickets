@@ -835,6 +835,10 @@ datasummary_skim(dfsum, fmt = '%.3f')
 datasummary_skim(csum, fmt = '%.3f')
 
 
+
+
+
+
 ' increased stops could be due to drivers OR due to cops being more strict with speeding and then changing their mind (an act against boredom?) '
 
 
@@ -969,8 +973,8 @@ for (l in unique(plot_no2$loc)) {
 # Make a map of counties for PM and PM10 included in sample colored by annual stops and out of sample with opacity zero
 
 
-
-
+' the treatment needs to coincide with the actual fucking fires '
+' it does because we dont know exactly when VA was affected by fires, but this is the best estimate (of the era) '
 
 
 

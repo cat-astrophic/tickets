@@ -3,6 +3,7 @@
 # Importing required modules
 
 import pandas as pd
+import numpy as np
 from datetime import datetime
 import requests
 import urllib
@@ -145,11 +146,28 @@ data = pd.merge(data, noaa, on = ['Merge_Date', 'FIPS'], how = 'left')
 
 # Bringing in pollution data
 
-pm =  pd.read_csv(direc + 'data/epa_aqs_data_PM.csv')
-pm10 =  pd.read_csv(direc + 'data/epa_aqs_data_PM10.csv')
-o3 =  pd.read_csv(direc + 'data/epa_aqs_data_O3.csv')
-no2 =  pd.read_csv(direc + 'data/epa_aqs_data_NO2.csv')
-co =  pd.read_csv(direc + 'data/epa_aqs_data_CO.csv')
+pm =  pd.read_csv('D:/EPA/epa_aqs_data_PM.csv')
+pm = pm[pm.Date > 20220000].reset_index(drop = True)
+
+pm10 =  pd.read_csv('D:/EPA/epa_aqs_data_PM10.csv')
+pm10 = pm10[pm10.Date > 20220000].reset_index(drop = True)
+
+o3 =  pd.read_csv('D:/EPA/epa_aqs_data_O3.csv')
+o3 = o3[o3.Date > 20220000].reset_index(drop = True)
+
+no2 =  pd.read_csv('D:/EPA/epa_aqs_data_NO2.csv')
+no2 = no2[no2.Date > 20220000].reset_index(drop = True)
+
+co =  pd.read_csv('D:/EPA/epa_aqs_data_CO.csv')
+co = co[co.Date > 20220000].reset_index(drop = True)
+
+# Subsetting for VA data
+
+pm = pm[pm.State == 51].reset_index(drop = True)
+pm10 = pm10[pm10.State == 51].reset_index(drop = True)
+o3 = o3[o3.State == 51].reset_index(drop = True)
+no2 = no2[no2.State == 51].reset_index(drop = True)
+co = co[co.State == 51].reset_index(drop = True)
 
 # Adding FIPS to pollution data
 
@@ -175,7 +193,7 @@ o3 = pd.concat([o3, pd.Series([fips_fix(o3.County[i]) for i in range(len(o3))], 
 no2 = pd.concat([no2, pd.Series([fips_fix(no2.County[i]) for i in range(len(no2))], name = 'FIPS')], axis = 1)
 co = pd.concat([co, pd.Series([fips_fix(co.County[i]) for i in range(len(co))], name = 'FIPS')], axis = 1)
 
-# Adding pollution to data
+# Prepping pollution data
 
 pm['Date'] = pm['Date'].astype(str)
 pm10['Date'] = pm10['Date'].astype(str)
@@ -201,8 +219,12 @@ o3 = o3[o3.O3 > 0].reset_index(drop = True)
 no2 = no2[no2.NO2 > 0].reset_index(drop = True)
 co = co[co.CO > 0].reset_index(drop = True)
 
-data = pd.concat([data, pd.Series([i+1 for i in range(len(data))], name = 'ID')], axis = 1)
+# Adding pollution to data
+
+data = pd.concat([data, pd.Series([int(d) - 10000 for d in data.Merge_Date], name = 'Merge_Date2')], axis = 1)
+
 data = pd.concat([data, pd.Series([str(data.Merge_Date[i]) + str(data.FIPS[i]) for i in range(len(data))], name = 'AAAAAAAAAAAAAA')], axis = 1)
+data = pd.concat([data, pd.Series([str(data.Merge_Date2[i]) + str(data.FIPS[i]) for i in range(len(data))], name = 'BBBBBBBBBBBBBB')], axis = 1)
 
 pm = pd.concat([pm, pd.Series([str(pm.Date[i]) + str(pm.FIPS[i]) for i in range(len(pm))], name = 'AAAAAAAAAAAAAA')], axis = 1)
 pm10 = pd.concat([pm10, pd.Series([str(pm10.Date[i]) + str(pm10.FIPS[i]) for i in range(len(pm10))], name = 'AAAAAAAAAAAAAA')], axis = 1)
@@ -216,19 +238,31 @@ o3_xxx = []
 no2_xxx = []
 co_xxx = []
 
+pm_py = []
+pm10_py = []
+o3_py = []
+no2_py = []
+co_py = []
+
 for i in range(len(data)):
     
     print(i)
     
-    tmp_pm = pm[pm.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]].reset_index(drop = True)
-    tmp_pm10 = pm10[pm10.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]].reset_index(drop = True)
-    tmp_o3 = o3[o3.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]].reset_index(drop = True)
-    tmp_no2 = no2[no2.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]].reset_index(drop = True)
-    tmp_co = co[co.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]].reset_index(drop = True)
+    tmp_pm = pm[pm.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]]
+    tmp_pm10 = pm10[pm10.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]]
+    tmp_o3 = o3[o3.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]]
+    tmp_no2 = no2[no2.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]]
+    tmp_co = co[co.AAAAAAAAAAAAAA == data.AAAAAAAAAAAAAA[i]]
+    
+    tmp_pm2 = pm[pm.AAAAAAAAAAAAAA == data.BBBBBBBBBBBBBB[i]]
+    tmp_pm102 = pm10[pm10.AAAAAAAAAAAAAA == data.BBBBBBBBBBBBBB[i]]
+    tmp_o32 = o3[o3.AAAAAAAAAAAAAA == data.BBBBBBBBBBBBBB[i]]
+    tmp_no22 = no2[no2.AAAAAAAAAAAAAA == data.BBBBBBBBBBBBBB[i]]
+    tmp_co2 = co[co.AAAAAAAAAAAAAA == data.BBBBBBBBBBBBBB[i]]
     
     if len(tmp_pm) > 0:
         
-        pm_xxx.append(tmp_pm.PM[0])
+        pm_xxx.append(np.mean(tmp_pm.PM))
         
     else:
         
@@ -236,7 +270,7 @@ for i in range(len(data)):
         
     if len(tmp_pm10) > 0:
         
-        pm10_xxx.append(tmp_pm10.PM10[0])
+        pm10_xxx.append(np.mean(tmp_pm10.PM10))
         
     else:
         
@@ -244,7 +278,7 @@ for i in range(len(data)):
         
     if len(tmp_o3) > 0:
         
-        o3_xxx.append(tmp_o3.O3[0])
+        o3_xxx.append(np.mean(tmp_o3.O3))
         
     else:
         
@@ -252,7 +286,7 @@ for i in range(len(data)):
         
     if len(tmp_no2) > 0:
         
-        no2_xxx.append(tmp_no2.NO2[0])
+        no2_xxx.append(np.mean(tmp_no2.NO2))
         
     else:
         
@@ -260,11 +294,51 @@ for i in range(len(data)):
         
     if len(tmp_co) > 0:
         
-        co_xxx.append(tmp_co.CO[0])
+        co_xxx.append(np.mean(tmp_co.CO))
         
     else:
         
         co_xxx.append(None)
+        
+    if len(tmp_pm2) > 0:
+        
+        pm_py.append(np.mean(tmp_pm2.PM))
+        
+    else:
+        
+        pm_py.append(None)
+        
+    if len(tmp_pm102) > 0:
+        
+        pm10_py.append(np.mean(tmp_pm102.PM10))
+        
+    else:
+        
+        pm10_py.append(None)
+        
+    if len(tmp_o32) > 0:
+        
+        o3_py.append(np.mean(tmp_o32.O3))
+        
+    else:
+        
+        o3_py.append(None)
+        
+    if len(tmp_no22) > 0:
+        
+        no2_py.append(np.mean(tmp_no22.NO2))
+        
+    else:
+        
+        no2_py.append(None)
+        
+    if len(tmp_co2) > 0:
+        
+        co_py.append(np.mean(tmp_co2.CO))
+        
+    else:
+        
+        co_py.append(None)
 
 pm_xxx = pd.Series(pm_xxx, name = 'PM')
 pm10_xxx = pd.Series(pm10_xxx, name = 'PM10')
@@ -272,7 +346,13 @@ o3_xxx = pd.Series(o3_xxx, name = 'Ozone')
 no2_xxx = pd.Series(no2_xxx, name = 'NO2')
 co_xxx = pd.Series(co_xxx, name = 'CO')
 
-data = pd.concat([data, pm_xxx, pm10_xxx, o3_xxx, no2_xxx, co_xxx], axis = 1)
+pm_py = pd.Series(pm_py, name = 'PM_PY')
+pm10_py = pd.Series(pm10_py, name = 'PM10_PY')
+o3_py = pd.Series(o3_py, name = 'Ozone_PY')
+no2_py = pd.Series(no2_py, name = 'NO2_PY')
+co_py = pd.Series(co_py, name = 'CO_PY')
+
+data = pd.concat([data, pm_xxx, pm10_xxx, o3_xxx, no2_xxx, co_xxx, pm_py, pm10_py, o3_py, no2_py, co_py], axis = 1)
 
 # Adding a month and year variable
 

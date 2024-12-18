@@ -15,6 +15,17 @@ library(MSwM)
 library(AER)
 library(modelsummary)
 
+' RANDOM FOREST APPROACH PREFERED ?!?! '
+
+' WHAT ABOUT THE USE OF DAILY LAGS IN THE MODELS ?!?! '
+
+' CAN ALSO TRY OZONE NOT +1 '
+
+' ARE RESULTS ROBUST TO DROPPING XXX AS AN INSTRUMENT ?? '
+
+' INTERACT RACE x POLLUTION AND GENDER x POLLUTION '
+
+
 # Project directory
 
 direc <- 'D:/tickets/'
@@ -68,7 +79,35 @@ for (i in 1:nrow(data)) {
 
 data$WEEK <- weak
 
-# Create an IV that is distance to the mountains (peak of at least 1000 meters)
+# Create a day of year variable
+
+fuck <- function(day, month) {
+  
+  ref <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+  
+  a <- gregexpr('/', day)[[1]][1]
+  b <- gregexpr('/', day)[[1]][2]
+  
+  val <- as.integer(substr(day, a+1, b-1)) + sum(ref[1:(as.integer(month))]) - 31
+  
+  return(val)
+  
+}
+
+day.of.year <- c()
+
+for (i in 1:nrow(data)) {
+  
+  print(i)
+  day.of.year <- c(day.of.year, fuck(data$STOP_DATE[i], data$MONTH[i]))
+  
+}
+
+data$DAY <- day.of.year
+
+# Compute distance to the mountains (peak of at least 1000 meters) for the IV
+
+options(tigris_use_cache = TRUE)
 
 va <- counties(state = 'VA')
 va$GEOID <- as.integer(va$GEOID)
@@ -100,36 +139,21 @@ nearest.peak <- st_nearest_feature(va, peaks)
 np <- peaks[nearest.peak,]
 va$PD <- as.numeric(st_distance(va, np, by_element = TRUE)) / 1000
 
-wee <- c()
-wpm <- c()
+# Looking at mean daily PM across VA in 2023
 
-for (i in 1:53) {
+day <- c()
+dpm <- c()
+
+for (i in 1:max(data$DAY)) {
   
-  tmp <- data %>% filter(WEEK == i)
-  
-  wee <- c(wee, i)
-  wpm <- c(wpm, mean(tmp$PM, na.rm = TRUE))
+  tmp <- data %>% filter(DAY == i)
+  day <- c(day, i)
+  dpm <- c(dpm, mean(tmp$PM, na.rm = TRUE))
   
 }
 
-fdf <- as.data.frame(cbind(wee, wpm))
-colnames(fdf) <- c('Week', 'Mean Particulate Matter')
-fdf2 <- fdf[nrow(fdf):1,]
-
-ftest1 <- Fstats(fdf$`Mean Particulate Matter` ~ 1)
-ftest2 <- Fstats(fdf2$`Mean Particulate Matter` ~ 1)
-
-ggplot(data = fdf, aes(x = Week, y = `Mean Particulate Matter`)) + 
-  theme_bw() + 
-  ggtitle('Weekly Mean Particulate Matter Levels by Week') + 
-  ylab('Micrograms per Cubic Meter') +
-  xlab('Week') +
-  geom_line(aes(x = Week, y = `Mean Particulate Matter`, group = 1), size = 1, alpha = 1) + 
-  #geom_vline(xintercept = ftest1$breakpoint) + 
-  #geom_vline(xintercept = 53 - ftest2$breakpoint) + 
-  theme(plot.title = element_text(hjust = 0.5)) + 
-  ylim(c(0,40)) +
-  scale_x_continuous(breaks = seq(0, 52, 4), labels = seq(0, 52, 4))
+fdf <- as.data.frame(cbind(day, dpm))
+colnames(fdf) <- c('Day', 'Mean Particulate Matter')
 
 mark <- lm(`Mean Particulate Matter` ~ 1, data = fdf)
 
@@ -141,44 +165,82 @@ plotProb(msm, which = 2)
 
 plotDiag(msm, regime = 2, which = 3)
 
-pm_mean <- c()
-PM10_mean <- c()
-cdf <- data %>% filter(WEEK %in% c(1:22,31:53))
+fdf$Color <- c(rep('Baseline Pollution', 135), rep('Canadian Wildfires', 70), rep('Baseline Pollution', 160))
 
-for (f in unique(data$FIPS)) {
+ggplot(data = fdf[!is.na(fdf$`Mean Particulate Matter`),], aes(x = Day, y = `Mean Particulate Matter`)) + 
+  theme_bw() + 
+  ggtitle('Daily Mean Particulate Matter Levels by Week') + 
+  ylab('Micrograms per Cubic Meter') +
+  xlab('Day') +
+  geom_path(aes(x = Day, y = `Mean Particulate Matter`, group = 1, color = Color), size = 1, alpha = 1) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  geom_vline(xintercept = 136) +
+  geom_vline(xintercept = 205) +
+  ylim(c(0,100)) +
+  scale_x_continuous(breaks = seq(0, 365, 30), labels = seq(0, 365, 30)) +
+  scale_color_manual(breaks = c('Baseline Pollution', 'Canadian Wildfires'), values = c('orange2', 'red4'), name = 'Regime') +
+  annotate('text', x = 171, y = 95, label = 'Canadian Wildfires') +
+  annotate('text', x = 67, y = 30, label = 'Baseline Pollution') +
+  annotate('text', x = 287, y = 30, label = 'Baseline Pollution')
+
+# Compare 2023 to 2022
+
+dpm2 <- c()
+
+for (i in 1:max(data$DAY)) {
   
-  tmp <- cdf %>% filter(FIPS == f)
-  pm_mean <- c(pm_mean, mean(tmp$PM, na.rm = TRUE))
-  PM10_mean <- c(PM10_mean, mean(tmp$PM10, na.rm = TRUE))
+  tmp <- data %>% filter(DAY == i)
+  dpm2 <- c(dpm2, mean(tmp$PM_PY, na.rm = TRUE))
   
 }
 
-uni <- unique(data$FIPS)
+fdf$PYPM <- dpm2
+
+mark2 <- lm(PYPM ~ 1, data = fdf)
+
+msm2 <- msmFit(mark2, k = 2, sw = rep(TRUE, 2))
+
+plotProb(msm2, which = 1)
+
+plotProb(msm2, which = 2)
+
+plotDiag(msm2, regime = 2, which = 3)
+
+ggplot(data = fdf[!is.na(fdf$`Mean Particulate Matter`),], aes(x = Day, y = `Mean Particulate Matter`)) + 
+  theme_bw() + 
+  ggtitle('Daily Mean Particulate Matter Levels') + 
+  ylab('Micrograms per Cubic Meter') +
+  xlab('Day') +
+  geom_path(aes(x = Day, y = PYPM, group = 1, color = 'Previous Year Pollution'), size = 2, alpha = 1, color = 'gray') + 
+  geom_path(aes(x = Day, y = `Mean Particulate Matter`, group = 1, color = Color), size = 1, alpha = 1) + 
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  geom_vline(xintercept = 136) +
+  geom_vline(xintercept = 205) +
+  ylim(c(0,100)) +
+  scale_x_continuous(breaks = seq(0, 365, 30), labels = seq(0, 365, 30)) +
+  scale_color_manual(breaks = c('Baseline Pollution', 'Canadian Wildfires', 'Previous Year Pollution'), values = c('orange3', 'red4', 'gray'), name = 'Regime') +
+  annotate('text', x = 171, y = 95, label = 'Canadian Wildfires') +
+  annotate('text', x = 67, y = 30, label = 'Baseline Pollution') +
+  annotate('text', x = 287, y = 30, label = 'Baseline Pollution')
+
+# Creating an additional IV with previous year pollution and distance to the mountains
+
 pd <- c()
-mu.pm <- c()
-mu.PM10 <- c()
 
 for (i in 1:nrow(data)) {
   
   print(i)
   pd <- c(pd, va$PD[which(va$GEOID == data$FIPS[i])])
-  mu.pm <- c(mu.pm, pm_mean[which(uni == data$FIPS[i])])
-  mu.PM10 <- c(mu.PM10, PM10_mean[which(uni == data$FIPS[i])])
   
 }
 
 data$PD <- pd
-data$MU_PM <- mu.pm
-data$MU_PM10 <- mu.PM10
 
-data$IV_PM_ <- ((data$WEEK %in% c(22:30)) * log(data$PD+1))
-data$IV_PM10_ <- ((data$WEEK %in% c(22:30)) * log(data$PD+1))
+data$IV_PM_ <- as.integer(data$DAY %in% c(136:205)) * log(data$PD+1)
+data$IV_PM10_ <- as.integer(data$DAY %in% c(136:205)) * log(data$PD+1)
 
-data$IV_PM <- ((data$WEEK %in% c(22:30)) * log(data$PD+1)) + data$MU_PM
-data$IV_PM10 <- ((data$WEEK %in% c(22:30)) * log(data$PD+1)) + data$MU_PM10
-
-hist(data$PM)
-hist(data$IV_PM)
+data$IV_PM <- (as.integer((data$DAY %in% c(136:205))) * log(data$PD+1)) + data$PM_PY
+data$IV_PM10 <- (as.integer((data$DAY %in% c(136:205))) * log(data$PD+1)) + data$PM_PY
 
 # Flagging minors in the data
 
@@ -224,6 +286,14 @@ colnames(data)[which(colnames(data) == 'PM.x')] <- 'PM'
 colnames(data)[which(colnames(data) == 'IV_PM.x')] <- 'IV_PM'
 colnames(data)[which(colnames(data) == 'WEEK.x')] <- 'WEEK'
 
+# Adding another IV
+
+data$XXX <- data$PD * as.integer(data$DAY %in% c(136:205))
+
+# Adding a day-of-week variable
+
+data$DOW <- data$DAY %% 7
+
 # Save this version of data to minimize the intense crying
 
 write.csv(data, paste0(direc, 'data/final_data.csv'), row.names = FALSE)
@@ -232,136 +302,136 @@ write.csv(data, paste0(direc, 'data/final_data.csv'), row.names = FALSE)
 
 # Running regressions for ticketed as an outcome conditional on being stopped
 
-ticket.xxx <- lm(TICKETED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+ticket.xxx <- lm(TICKETED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                  + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                  + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                  + factor(RESIDENCY) + factor(AGENCY.NAME)
-                 + factor(JURISDICTION) + factor(WEEK), data = data)
+                 + factor(WEEK) + factor(DOW), data = data)
 
-ticket.x10 <- lm(TICKETED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+ticket.x10 <- lm(TICKETED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                  + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                  + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                  + factor(RESIDENCY) + factor(AGENCY.NAME)
-                 + factor(JURISDICTION) + factor(WEEK), data = data)
+                 + factor(WEEK) + factor(DOW), data = data)
 
 xticket.xxx <- coeftest(ticket.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xticket.x10 <- coeftest(ticket.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for arrested as an outcome conditional on being stopped
 
-arrested.xxx <- lm(ARRESTED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+arrested.xxx <- lm(ARRESTED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                   + factor(JURISDICTION) + factor(WEEK), data = data)
+                   + factor(WEEK) + factor(DOW), data = data)
 
-arrested.x10 <- lm(ARRESTED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+arrested.x10 <- lm(ARRESTED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                   + factor(JURISDICTION) + factor(WEEK), data = data)
+                   + factor(WEEK) + factor(DOW), data = data)
 
 xarrested.xxx <- coeftest(arrested.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xarrested.x10 <- coeftest(arrested.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for arrested as an outcome conditional on being searched
 
-arrestedx.xxx <- lm(ARRESTED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Searched+1) + MINOR
+arrestedx.xxx <- lm(ARRESTED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                     + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                     + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                     + factor(RESIDENCY) + factor(AGENCY.NAME)
-                    + factor(JURISDICTION) + factor(WEEK), data = data[which(data$SEARCHED == 1),])
+                    + factor(WEEK) + factor(DOW), data = data[which(data$SEARCHED == 1),])
 
-arrestedx.x10 <- lm(ARRESTED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Searched+1) + MINOR
+arrestedx.x10 <- lm(ARRESTED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                     + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                     + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                     + factor(RESIDENCY) + factor(AGENCY.NAME)
-                    + factor(JURISDICTION) + factor(WEEK), data = data[which(data$SEARCHED == 1),])
+                    + factor(WEEK) + factor(DOW), data = data[which(data$SEARCHED == 1),])
 
 xarrestedx.xxx <- coeftest(arrestedx.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xarrestedx.x10 <- coeftest(arrestedx.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for being searched in any capacity as an outcome conditional on being stopped
 
-searched.xxx <- lm(SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+searched.xxx <- lm(SEARCHED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                   + factor(JURISDICTION) + factor(WEEK), data = data)
+                   + factor(WEEK) + factor(DOW), data = data)
 
-searched.x10 <- lm(SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+searched.x10 <- lm(SEARCHED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                   + factor(JURISDICTION) + factor(WEEK), data = data)
+                   + factor(WEEK) + factor(DOW), data = data)
 
 xsearched.xxx <- coeftest(searched.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xsearched.x10 <- coeftest(searched.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the vehicle being searched as an outcome conditional on being stopped
 
-vehicle.xxx <- lm(VEHICLE_SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+vehicle.xxx <- lm(VEHICLE_SEARCHED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                   + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                   + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                   + factor(RESIDENCY) + factor(AGENCY.NAME)
-                  + factor(JURISDICTION) + factor(WEEK), data = data)
+                  + factor(WEEK) + factor(DOW), data = data)
 
-vehicle.x10 <- lm(VEHICLE_SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+vehicle.x10 <- lm(VEHICLE_SEARCHED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                   + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                   + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                   + factor(RESIDENCY) + factor(AGENCY.NAME)
-                  + factor(JURISDICTION) + factor(WEEK), data = data)
+                  + factor(WEEK) + factor(DOW), data = data)
 
 xvehicle.xxx <- coeftest(vehicle.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xvehicle.x10 <- coeftest(vehicle.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the driver being searched as an outcome conditional on being stopped
 
-driver.xxx <- lm(PERSON_SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+driver.xxx <- lm(PERSON_SEARCHED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                  + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                  + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                  + factor(RESIDENCY) + factor(AGENCY.NAME)
-                 + factor(JURISDICTION) + factor(WEEK), data = data)
+                 + factor(WEEK) + factor(DOW), data = data)
 
-driver.x10 <- lm(PERSON_SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+driver.x10 <- lm(PERSON_SEARCHED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                  + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                  + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                  + factor(RESIDENCY) + factor(AGENCY.NAME)
-                 + factor(JURISDICTION) + factor(WEEK), data = data)
+                 + factor(WEEK) + factor(DOW), data = data)
 
 xdriver.xxx <- coeftest(driver.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xdriver.x10 <- coeftest(driver.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the cop using force as an outcome conditional on being stopped
 
-force.xxx <- lm(FORCE ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+force.xxx <- lm(FORCE ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                 + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                 + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                 + factor(RESIDENCY) + factor(AGENCY.NAME)
-                + factor(JURISDICTION) + factor(WEEK), data = data)
+                + factor(WEEK) + factor(DOW), data = data)
 
-force.x10 <- lm(FORCE ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+force.x10 <- lm(FORCE ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                 + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                 + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                 + factor(RESIDENCY) + factor(AGENCY.NAME)
-                + factor(JURISDICTION) + factor(WEEK), data = data)
+                + factor(WEEK) + factor(DOW), data = data)
 
 xforce.xxx <- coeftest(force.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xforce.x10 <- coeftest(force.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the cop using force as an outcome conditional on being arrested
 
-forcex.xxx <- lm(FORCE ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Arrests+1) + MINOR
+forcex.xxx <- lm(FORCE ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                  + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                  + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                  + factor(RESIDENCY) + factor(AGENCY.NAME)
-                 + factor(JURISDICTION) + factor(WEEK), data = data[which(data$ARRESTED == 1),])
+                 + factor(WEEK) + factor(DOW), data = data[which(data$ARRESTED == 1),])
 
-forcex.x10 <- lm(FORCE ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Arrests+1) + MINOR
+forcex.x10 <- lm(FORCE ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                  + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                  + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                  + factor(RESIDENCY) + factor(AGENCY.NAME)
-                 + factor(JURISDICTION) + factor(WEEK), data = data[which(data$ARRESTED == 1),])
+                 + factor(WEEK) + factor(DOW), data = data[which(data$ARRESTED == 1),])
 
 xforcex.xxx <- coeftest(forcex.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xforcex.x10 <- coeftest(forcex.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
@@ -370,136 +440,136 @@ xforcex.x10 <- coeftest(forcex.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for ticketed as an outcome conditional on being stopped
 
-ticket_iv.xxx <- ivreg(TICKETED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+ticket_iv.xxx <- ivreg(TICKETED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                        + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                        + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                        + factor(RESIDENCY) + factor(AGENCY.NAME)
-                       + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data)
+                       + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data)
 
-ticket_iv.x10 <- ivreg(TICKETED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+ticket_iv.x10 <- ivreg(TICKETED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                        + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                        + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                        + factor(RESIDENCY) + factor(AGENCY.NAME)
-                       + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data)
+                       + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data)
 
 xticket_iv.xxx <- coeftest(ticket_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xticket_iv.x10 <- coeftest(ticket_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for arrested as an outcome conditional on being stopped
 
-arrested_iv.xxx <- ivreg(ARRESTED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+arrested_iv.xxx <- ivreg(ARRESTED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
                          + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                          + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                          + factor(RESIDENCY) + factor(AGENCY.NAME)
-                         + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data)
+                         + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data)
 
-arrested_iv.x10 <- ivreg(ARRESTED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+arrested_iv.x10 <- ivreg(ARRESTED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
                          + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
                          + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
                          + factor(RESIDENCY) + factor(AGENCY.NAME)
-                         + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data)
+                         + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data)
 
 xarrested_iv.xxx <- coeftest(arrested_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xarrested_iv.x10 <- coeftest(arrested_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for arrested as an outcome conditional on being searched
 
-arrestedx_iv.xxx <- ivreg(ARRESTED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Searched+1) + MINOR
-                       + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                       + factor(RESIDENCY) + factor(AGENCY.NAME)
-                       + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data[which(data$SEARCHED == 1),])
+arrestedx_iv.xxx <- ivreg(ARRESTED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
+                          + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                          + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                          + factor(RESIDENCY) + factor(AGENCY.NAME)
+                          + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data[which(data$SEARCHED == 1),])
 
-arrestedx_iv.x10 <- ivreg(ARRESTED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Searched+1) + MINOR
-                       + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                       + factor(RESIDENCY) + factor(AGENCY.NAME)
-                       + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data[which(data$SEARCHED == 1),])
+arrestedx_iv.x10 <- ivreg(ARRESTED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
+                          + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                          + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                          + factor(RESIDENCY) + factor(AGENCY.NAME)
+                          + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data[which(data$SEARCHED == 1),])
 
 xarrestedx_iv.xxx <- coeftest(arrestedx_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xarrestedx_iv.x10 <- coeftest(arrestedx_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for being searched in any capacity as an outcome conditional on being stopped
 
-searched_iv.xxx <- ivreg(SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                      + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                      + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                      + factor(RESIDENCY) + factor(AGENCY.NAME)
-                      + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data)
+searched_iv.xxx <- ivreg(SEARCHED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
+                         + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                         + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                         + factor(RESIDENCY) + factor(AGENCY.NAME)
+                         + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data)
 
-searched_iv.x10 <- ivreg(SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                      + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                      + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                      + factor(RESIDENCY) + factor(AGENCY.NAME)
-                      + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data)
+searched_iv.x10 <- ivreg(SEARCHED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
+                         + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                         + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                         + factor(RESIDENCY) + factor(AGENCY.NAME)
+                         + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data)
 
 xsearched_iv.xxx <- coeftest(searched_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xsearched_iv.x10 <- coeftest(searched_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the vehicle being searched as an outcome conditional on being stopped
 
-vehicle_iv.xxx <- ivreg(VEHICLE_SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                     + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                     + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                     + factor(RESIDENCY) + factor(AGENCY.NAME)
-                     + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data)
+vehicle_iv.xxx <- ivreg(VEHICLE_SEARCHED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
+                        + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                        + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                        + factor(RESIDENCY) + factor(AGENCY.NAME)
+                        + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data)
 
-vehicle_iv.x10 <- ivreg(VEHICLE_SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                     + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                     + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                     + factor(RESIDENCY) + factor(AGENCY.NAME)
-                     + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data)
+vehicle_iv.x10 <- ivreg(VEHICLE_SEARCHED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
+                        + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                        + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                        + factor(RESIDENCY) + factor(AGENCY.NAME)
+                        + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data)
 
 xvehicle_iv.xxx <- coeftest(vehicle_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xvehicle_iv.x10 <- coeftest(vehicle_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the driver being searched as an outcome conditional on being stopped
 
-driver_iv.xxx <- ivreg(PERSON_SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                    + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data)
+driver_iv.xxx <- ivreg(PERSON_SEARCHED ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(RESIDENCY) + factor(AGENCY.NAME)
+                       + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data)
 
-driver_iv.x10 <- ivreg(PERSON_SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                    + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data)
+driver_iv.x10 <- ivreg(PERSON_SEARCHED ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(RESIDENCY) + factor(AGENCY.NAME)
+                       + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data)
 
 xdriver_iv.xxx <- coeftest(driver_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xdriver_iv.x10 <- coeftest(driver_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the cop using force as an outcome conditional on being stopped
 
-force_iv.xxx <- ivreg(FORCE ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                   + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                   + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                   + factor(RESIDENCY) + factor(AGENCY.NAME)
-                   + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data)
+force_iv.xxx <- ivreg(FORCE ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
+                      + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                      + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                      + factor(RESIDENCY) + factor(AGENCY.NAME)
+                      + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data)
 
-force_iv.x10 <- ivreg(FORCE ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
-                   + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                   + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                   + factor(RESIDENCY) + factor(AGENCY.NAME)
-                   + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data)
+force_iv.x10 <- ivreg(FORCE ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
+                      + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                      + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                      + factor(RESIDENCY) + factor(AGENCY.NAME)
+                      + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data)
 
 xforce_iv.xxx <- coeftest(force_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xforce_iv.x10 <- coeftest(force_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
 
 # Running regressions for the cop using force as an outcome conditional on being arrested
 
-forcex_iv.xxx <- ivreg(FORCE ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Arrests+1) + MINOR
-                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                    + factor(JURISDICTION) + factor(WEEK) | . - PM + IV_PM, data = data[which(data$ARRESTED == 1),])
+forcex_iv.xxx <- ivreg(FORCE ~ log(PM) + log(Ozone+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(RESIDENCY) + factor(AGENCY.NAME)
+                       + factor(WEEK) + factor(DOW) | . - log(PM) + log(PM_PY) + XXX, data = data[which(data$ARRESTED == 1),])
 
-forcex_iv.x10 <- ivreg(FORCE ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Arrests+1) + MINOR
-                    + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
-                    + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
-                    + factor(RESIDENCY) + factor(AGENCY.NAME)
-                    + factor(JURISDICTION) + factor(WEEK) | . - PM10 + IV_PM10, data = data[which(data$ARRESTED == 1),])
+forcex_iv.x10 <- ivreg(FORCE ~ log(PM10) + log(Ozone+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + factor(RACE) + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(RESIDENCY) + factor(AGENCY.NAME)
+                       + factor(WEEK) + factor(DOW) | . - log(PM10) + log(PM10_PY) + XXX, data = data[which(data$ARRESTED == 1),])
 
 xforcex_iv.xxx <- coeftest(forcex_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
 xforcex_iv.x10 <- coeftest(forcex_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
@@ -593,20 +663,39 @@ colnames(f_stats) <- c('PM', 'PM10')
 
 write.csv(f_stats, paste0(direc, 'results/f_stats.txt'), row.names = FALSE)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Add weather data to counts
 
-counts <- left_join(counts, data[,which(colnames(data) %in% c('STOP_DATE', 'JURISDICTION', 'Ozone', 'CO', 'TEMP', 'PRCP'))], by = c('DATE2' = 'STOP_DATE', 'Jurisdiction' = 'JURISDICTION'))
+counts <- left_join(counts, data[,which(colnames(data) %in% c('STOP_DATE', 'JURISDICTION', 'Ozone', 'CO', 'TEMP', 'PRCP', 'PM_PY', 'PD', 'WEEK', 'DAY', 'Ozone_PY', 'CO_PY'))], by = c('DATE2' = 'STOP_DATE', 'Jurisdiction' = 'JURISDICTION'))
 counts <- counts[!duplicated(counts),]
 
 # Counts analyses
 
 # Stops
 
-stops1 <- lm(log(Stops+1) ~ PM + log(Ozone+1) + log(CO+1) + TEMP + PRCP, data = counts)
-stops2 <- lm(log(Stops+1) ~ PM + log(Ozone+1) + log(CO+1) + TEMP + PRCP + factor(Agency), data = counts)
+stops1 <- lm(log(Stops+1) ~ log(PM+1) + TEMP + PRCP, data = counts[which(counts$DAY %in% c(136:205)),])
+stops2 <- lm(log(Stops+1) ~ log(PM+1) + TEMP + PRCP + factor(Agency), data = counts[which(counts$DAY %in% c(136:205)),])
 
-ivstops1 <- ivreg(log(Stops+1) ~ PM + log(Ozone+1) + log(CO+1) + TEMP + PRCP | . - PM + IV_PM, data = counts)
-ivstops2 <- ivreg(log(Stops+1) ~ PM + log(Ozone+1) + log(CO+1) + TEMP + PRCP + factor(Agency) | . - PM + IV_PM, data = counts)
+ivstops1 <- ivreg(log(Stops+1) ~ log(PM+1) + TEMP + PRCP | . - log(PM+1) + log(PD+1), data = counts[which(counts$DAY %in% c(136:205)),])
+ivstops2 <- ivreg(log(Stops+1) ~ log(PM+1) + TEMP + PRCP + factor(Agency) | . - log(PM+1) + log(PMD+1), data = counts[which(counts$DAY %in% c(136:205)),])
 
 stops1x <- coeftest(stops1, vcov = vcovCL(stops1, type = 'HC0'))
 stops2x <- coeftest(stops2, vcov = vcovCL(stops2, type = 'HC0'))
@@ -617,6 +706,37 @@ ivstops2x <- coeftest(ivstops2, vcov = vcovCL(ivstops2, type = 'HC0'))
 stargazer(stops1, ivstops1, stops2, ivstops2, omit = c('Agency', 'WEEK', 'Jurisdiction'), type = 'text')
 
 stargazer(stops1x, ivstops1x, stops2x, ivstops2x, omit = c('Agency', 'WEEK', 'Jurisdiction'), type = 'text')
+
+shit.ass <- summary(ivstops2, diagnostics = TRUE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Tickets
 
@@ -833,6 +953,233 @@ colnames(csum) <- c('Stops', 'Tickets', 'Searches', 'Vehicle Searches', 'Person 
 datasummary_skim(dfsum, fmt = '%.3f')
 
 datasummary_skim(csum, fmt = '%.3f')
+
+# Re-run the IV analysis for same-county residents only
+
+samesies <- data %>% filter(RESIDENCY == 'RESIDENT OF CITY/COUNTY OF STOP')
+
+# Running regressions for ticketed as an outcome conditional on being stopped
+
+ticket_iv.xxx <- ivreg(TICKETED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(AGENCY.NAME)
+                       + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies)
+
+ticket_iv.x10 <- ivreg(TICKETED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(AGENCY.NAME)
+                       + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies)
+
+xticket_iv.xxx <- coeftest(ticket_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xticket_iv.x10 <- coeftest(ticket_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for arrested as an outcome conditional on being stopped
+
+arrested_iv.xxx <- ivreg(ARRESTED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                         + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                         + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                         + factor(AGENCY.NAME)
+                         + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies)
+
+arrested_iv.x10 <- ivreg(ARRESTED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                         + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                         + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                         + factor(AGENCY.NAME)
+                         + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies)
+
+xarrested_iv.xxx <- coeftest(arrested_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xarrested_iv.x10 <- coeftest(arrested_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for arrested as an outcome conditional on being searched
+
+arrestedx_iv.xxx <- ivreg(ARRESTED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Searched+1) + MINOR
+                          + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                          + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                          + factor(AGENCY.NAME)
+                          + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies[which(samesies$SEARCHED == 1),])
+
+arrestedx_iv.x10 <- ivreg(ARRESTED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Searched+1) + MINOR
+                          + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                          + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                          + factor(AGENCY.NAME)
+                          + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies[which(samesies$SEARCHED == 1),])
+
+xarrestedx_iv.xxx <- coeftest(arrestedx_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xarrestedx_iv.x10 <- coeftest(arrestedx_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for being searched in any capacity as an outcome conditional on being stopped
+
+searched_iv.xxx <- ivreg(SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                         + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                         + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                         + factor(AGENCY.NAME)
+                         + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies)
+
+searched_iv.x10 <- ivreg(SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                         + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                         + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                         + factor(AGENCY.NAME)
+                         + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies)
+
+xsearched_iv.xxx <- coeftest(searched_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xsearched_iv.x10 <- coeftest(searched_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for the vehicle being searched as an outcome conditional on being stopped
+
+vehicle_iv.xxx <- ivreg(VEHICLE_SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                        + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                        + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                        + factor(AGENCY.NAME)
+                        + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies)
+
+vehicle_iv.x10 <- ivreg(VEHICLE_SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                        + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                        + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                        + factor(AGENCY.NAME)
+                        + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies)
+
+xvehicle_iv.xxx <- coeftest(vehicle_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xvehicle_iv.x10 <- coeftest(vehicle_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for the driver being searched as an outcome conditional on being stopped
+
+driver_iv.xxx <- ivreg(PERSON_SEARCHED ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(AGENCY.NAME)
+                       + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies)
+
+driver_iv.x10 <- ivreg(PERSON_SEARCHED ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                       + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(AGENCY.NAME)
+                       + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies)
+
+xdriver_iv.xxx <- coeftest(driver_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xdriver_iv.x10 <- coeftest(driver_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for the cop using force as an outcome conditional on being stopped
+
+force_iv.xxx <- ivreg(FORCE ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                      + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                      + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                      + factor(AGENCY.NAME)
+                      + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies)
+
+force_iv.x10 <- ivreg(FORCE ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + MINOR
+                      + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                      + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                      + factor(AGENCY.NAME)
+                      + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies)
+
+xforce_iv.xxx <- coeftest(force_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xforce_iv.x10 <- coeftest(force_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+# Running regressions for the cop using force as an outcome conditional on being arrested
+
+forcex_iv.xxx <- ivreg(FORCE ~ PM + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Arrests+1) + MINOR
+                       + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(AGENCY.NAME)
+                       + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM + IV_PM, data = samesies[which(samesies$ARRESTED == 1),])
+
+forcex_iv.x10 <- ivreg(FORCE ~ PM10 + log(Ozone+1) + log(CO+1) + log(Stops+1) + log(Arrests+1) + MINOR
+                       + TEMP + PRCP + relevel(RACE, ref = 'WHITE') + factor(ETHNICITY) + factor(GENDER)
+                       + factor(ENGLISH.SPEAKING) + factor(REASON.FOR.STOP)
+                       + factor(AGENCY.NAME)
+                       + factor(JURISDICTION) + factor(WEEK) + factor(DOW) | . - PM10 + IV_PM10, data = samesies[which(samesies$ARRESTED == 1),])
+
+xforcex_iv.xxx <- coeftest(forcex_iv.xxx, vcov = vcovCL, cluster = ~AGENCY.NAME)
+xforcex_iv.x10 <- coeftest(forcex_iv.x10, vcov = vcovCL, cluster = ~AGENCY.NAME)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Saving results
+
+write.csv(stargazer(xticket_iv.xxx, xarrested_iv.xxx, xarrestedx_iv.xxx, xsearched_iv.xxx, xvehicle_iv.xxx, xdriver_iv.xxx,
+                    xforce_iv.xxx, xforcex_iv.xxx, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE')),
+          paste0(direc, 'results/pm_iv_local.txt'), row.names = FALSE)
+
+write.csv(stargazer(ticket_iv.xxx, arrested_iv.xxx, arrestedx_iv.xxx, searched_iv.xxx, vehicle_iv.xxx, driver_iv.xxx,
+                    force_iv.xxx, forcex_iv.xxx, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE')),
+          paste0(direc, 'results/pm_iv_unadj_local.txt'), row.names = FALSE)
+
+write.csv(stargazer(xticket_iv.x10, xarrested_iv.x10, xarrestedx_iv.x10, xsearched_iv.x10, xvehicle_iv.x10, xdriver_iv.x10,
+                    xforce_iv.x10, xforcex_iv.x10, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE')),
+          paste0(direc, 'results/pm10_iv_local.txt'), row.names = FALSE)
+
+write.csv(stargazer(ticket_iv.x10, arrested_iv.x10, arrestedx_iv.x10, searched_iv.x10, vehicle_iv.x10, driver_iv.x10,
+                    force_iv.x10, forcex_iv.x10, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE')),
+          paste0(direc, 'results/pm10_iv_unadj_local.txt'), row.names = FALSE)
+
+# Viewing results
+
+stargazer(xticket_iv.xxx, xarrested_iv.xxx, xarrestedx_iv.xxx, xsearched_iv.xxx, xvehicle_iv.xxx, xdriver_iv.xxx,
+          xforce_iv.xxx, xforcex_iv.xxx, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE'))
+
+stargazer(ticket_iv.xxx, arrested_iv.xxx, arrestedx_iv.xxx, searched_iv.xxx, vehicle_iv.xxx, driver_iv.xxx,
+          force_iv.xxx, forcex_iv.xxx, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE'))
+
+stargazer(xticket_iv.x10, xarrested_iv.x10, xarrestedx_iv.x10, xsearched_iv.x10, xvehicle_iv.x10, xdriver_iv.x10,
+          xforce_iv.x10, xforcex_iv.x10, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE'))
+
+stargazer(ticket_iv.x10, arrested_iv.x10, arrestedx_iv.x10, searched_iv.x10, vehicle_iv.x10, driver_iv.x10,
+          force_iv.x10, forcex_iv.x10, type = 'text', omit = c('AGENCY.NAME', 'JURISDICTION', 'WEEK', 'VIRGINIA.CRIME.CODE'))
+
+# Model diagnostics for IV regressions to get first stage F-statistics
+
+sum_tix <- summary(ticket_iv.xxx, diagnostics = TRUE)
+sum_arr <- summary(arrested_iv.xxx, diagnostics = TRUE)
+sum_arx <- summary(arrestedx_iv.xxx, diagnostics = TRUE)
+sum_sea <- summary(searched_iv.xxx, diagnostics = TRUE)
+sum_veh <- summary(vehicle_iv.xxx, diagnostics = TRUE)
+sum_dri <- summary(driver_iv.xxx, diagnostics = TRUE)
+sum_for <- summary(force_iv.xxx, diagnostics = TRUE)
+sum_fox <- summary(forcex_iv.xxx, diagnostics = TRUE)
+
+sum_tix2 <- summary(ticket_iv.x10, diagnostics = TRUE)
+sum_arr2 <- summary(arrested_iv.x10, diagnostics = TRUE)
+sum_arx2 <- summary(arrestedx_iv.x10, diagnostics = TRUE)
+sum_sea2 <- summary(searched_iv.x10, diagnostics = TRUE)
+sum_veh2 <- summary(vehicle_iv.x10, diagnostics = TRUE)
+sum_dri2 <- summary(driver_iv.x10, diagnostics = TRUE)
+sum_for2 <- summary(force_iv.x10, diagnostics = TRUE)
+sum_fox2 <- summary(forcex_iv.x10, diagnostics = TRUE)
+
+f_stats3 <- as.data.frame(cbind(c(sum_tix[[12]][7], sum_arr[[12]][7], sum_arx[[12]][7], sum_sea[[12]][7],
+                                  sum_veh[[12]][7], sum_dri[[12]][7], sum_for[[12]][7], sum_fox[[12]][7]),
+                                c(sum_tix2[[12]][7], sum_arr2[[12]][7], sum_arx2[[12]][7], sum_sea2[[12]][7],
+                                  sum_veh2[[12]][7], sum_dri2[[12]][7], sum_for2[[12]][7], sum_fox2[[12]][7])))
+
+colnames(f_stats3) <- c('PM', 'PM10')
+
+write.csv(f_stats3, paste0(direc, 'results/f_stats_samesies.txt'), row.names = FALSE)
+
+
+
+
+
+' Two instruments - one is same day of year (e.g., 5th Monday) and one is same date '
+' in both cases the instrument includes the extra mountain peak and time based component '
+
+
+
+
+
+
 
 
 

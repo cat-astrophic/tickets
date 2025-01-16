@@ -8,14 +8,14 @@ from bs4 import BeautifulSoup as bs
 
 # Defining some variables
 
-filepath = 'D:/EPA/raw_data/'
+filepath = 'D:/tickets/data/EPA/raw_data/'
 email = '' # Username for EPA AQS API
 key = '' # User key
 params = ['88101', '42602', '44201', '81102', '42101'] # Desired pollutants
 param_names = ['PM', 'NO2', 'O3', 'PM10', 'CO'] # Names for these pollutants
 months = [str(i) if i>9 else '0'+str(i) for i in range(1,13)] # Months
 edates = ['31', '28', '31', '30', '31', '30', '31', '31', '30', '31', '30', '31'] # End dates
-states = ['24', '51'] # States FIPS codes
+states = ['51'] # States FIPS codes
 
 # Defining the url components
 
@@ -28,13 +28,13 @@ url5 = '&state='
 
 # Retrieving the data
 
-for param in params: # CURRENTLY THIS JUST RUNS FOR SO2
+for param in params:
     
     missed = [] # Stores pollution-state-months which do not come through the API
     
     for state in states:
         
-        for year in range(2023,2024):
+        for year in range(2022,2024):
             
             for month in months:
                 

@@ -4,7 +4,6 @@
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
 import requests
 import urllib
 
@@ -14,58 +13,52 @@ direc = 'D:/tickets/'
 
 # Reading in the ticket data
 
-data = pd.read_csv(direc + 'data/community-policing-data.csv')
+data = pd.read_csv(direc + 'data/community-policing-data.csv', error_bad_lines = False)
 
 # Remove observations from out of sample
 
-drops_early = [i for i in range(len(data)) if datetime.strptime(data.STOP_DATE[i], '%m/%d/%Y') < datetime(2022,12,31,0,0)]
-drops_late = [i for i in range(len(data)) if datetime.strptime(data.STOP_DATE[i], '%m/%d/%Y') >= datetime(2024,1,1,0,0)]
-drops = list(set(drops_early + drops_late))
-keeps = [i for i in range(len(data)) if i not in drops]
+keeps = [i for i in range(len(data)) if data.STOP_DATE[i][-4:] == '2023']
 data = data[data.index.isin(keeps)].reset_index(drop = True)
 
 # Remove observations for drivers under age
 
+data = data[~data.AGE.isin(['Unknown', 'Missing', 'Over 98 Years'])].reset_index(drop = True)
+data.AGE = data.AGE.astype(int)
 data = data[data.AGE >= 16].reset_index(drop = True)
 
 # Remove observations for passengers
 
-data = data[data['PERSON TYPE'] == 'DRIVER'].reset_index(drop = True)
+data = data[data['PERSON TYPE'] == 'Driver'].reset_index(drop = True)
 
 # Removing non traffic or equipment violations
 
-data = data[data['REASON FOR STOP'].isin(['TRAFFIC VIOLATION', 'EQUIPMENT VIOLATION'])].reset_index(drop = True)
-
-# Removing observations with non-text jurisdiction
-
-these = list(sorted(data.JURISDICTION.unique()))[155:]
-
-data = data[data.JURISDICTION.isin(these)].reset_index(drop = True)
+data = data[data['REASON FOR STOP'].isin(['Traffic Violation', 'Equipment Violation'])].reset_index(drop = True)
 
 # Adding FIPS to data
 
-counties = ['ACCOMACK CO', 'ALBEMARLE CO', 'ALLEGHANY CO', 'AMELIA CO', 'AMHERST CO', 'APPOMATTOX CO',
-            'ARLINGTON CO', 'AUGUSTA CO', 'BATH CO', 'BEDFORD CO', 'BLAND CO', 'BOTETOURT CO',
-            'BRUNSWICK CO', 'BUCHANAN CO', 'BUCKINGHAM CO', 'CAMPBELL CO', 'CAROLINE CO', 'CARROLL CO',
-            'CHARLES CITY CO', 'CHARLOTTE CO', 'CHESTERFIELD CO', 'CLARKE CO', 'CRAIG CO', 'CULPEPER CO',
-            'CUMBERLAND CO', 'DICKENSON CO', 'DINWIDDIE CO', 'ESSEX CO', 'FAIRFAX CO', 'FAUQUIER CO',
-            'FLOYD CO', 'FLUVANNA CO', 'FRANKLIN COUNTY', 'FREDERICK CO', 'GILES CO', 'GLOUCESTER CO',
-            'GOOCHLAND CO', 'GRAYSON CO', 'GREENE CO', 'GREENSVILLE CO', 'HALIFAX CO', 'HANOVER CO',
-            'HENRICO CO', 'HENRY CO', 'HIGHLAND CO', 'ISLE OF WIGHT CO', 'JAMES CITY CO', 'KING AND QUEEN CO',
-            'KING GEORGE CO', 'KING WILLIAM CO', 'LANCASTER CO', 'LEE CO', 'LOUDOUN CO', 'LOUISA CO',
-            'LUNENBURG CO', 'MADISON CO', 'MATHEWS CO', 'MECKLENBURG CO', 'MIDDLESEX CO', 'MONTGOMERY CO',
-            'NELSON CO', 'NEW KENT CO', 'NORTHAMPTON CO', 'NORTHUMBERLAND CO', 'NOTTOWAY CO', 'ORANGE CO',
-            'PAGE CO', 'PATRICK CO', 'PITTSYLVANIA CO', 'POWHATAN CO', 'PRINCE EDWARD CO', 'PRINCE GEORGE CO',
-            'PRINCE WILLIAM CO', 'PULASKI CO', 'RAPPAHANNOCK CO', 'RICHMOND CO', 'ROANOKE CO', 'ROCKBRIDGE CO',
-            'ROCKINGHAM CO', 'RUSSELL CO', 'SCOTT CO', 'SHENANDOAH CO', 'SMYTH CO', 'SOUTHAMPTON CO',
-            'SPOTSYLVANIA CO', 'STAFFORD CO', 'SURRY CO', 'SUSSEX CO', 'TAZEWELL CO', 'WARREN CO',
-            'WASHINGTON CO', 'WESTMORELAND CO', 'WISE CO', 'WYTHE CO', 'YORK CO', 'ALEXANDRIA', 'BRISTOL',
-            'BUENA VISTA', 'CHARLOTTESVILLE', 'CHESAPEAKE', 'COLONIAL HEIGHTS', 'DANVILLE', 
-            'FALLS CHURCH', 'FRANKLIN CITY', 'FREDERICKSBURG', 'GALAX', 'HAMPTON', 'HARRISONBURG',
-            'HOPEWELL', 'LYNCHBURG', 'MANASSAS', 'MARTINSVILLE', 'NEWPORT NEWS', 'NORFOLK', 'NORTON',
-            'PETERSBURG', 'POQUOSON', 'PORTSMOUTH', 'RADFORD', 'RICHMOND CITY', 'ROANOKE CITY', 'SALEM',
-            'STAUNTON', 'SUFFOLK', 'VIRGINIA BEACH', 'WAYNESBORO', 'WILLIAMSBURG', 'WINCHESTER',
-            'COVINGTON', 'MANASSAS PARK', 'FAIRFAX CITY', 'EMPORIA', 'LEXINGTON']
+counties = ['Accomack CO (001)', 'Albemarle CO (002)', 'Alleghany CO (003)', 'Amelia CO (004)', 'Amherst CO (005)',
+            'Appomattox CO (006)',  'Arlington CO (000)', 'Augusta CO (007)', 'Bath CO (008)', 'Bedford CO (009)',
+            'Bland CO (010)', 'Botetourt CO (011)', 'Brunswick CO (012)', 'Buchanan CO (013)', 'Buckingham CO (014)',
+            'Campbell CO (015)', 'Caroline CO (016)', 'Carroll CO (017)', 'Charles City CO (018)', 'Charlotte CO (019)',
+            'Chesterfield CO (020)', 'Clarke CO (021)', 'Craig CO (022)', 'Culpeper CO (023)', 'Cumberland CO (024)',
+            'Dickenson CO (025)', 'Dinwiddie CO (026)', 'Essex CO (028)', 'Fairfax CO (029)', 'Fauquier CO (030)', 'Floyd CO (031)',
+            'Fluvanna CO (032)', 'Franklin County (033)', 'Frederick CO (034)', 'Giles CO (035)', 'Gloucester CO (036)',
+            'Goochland CO (037)', 'Grayson CO (038)', 'Greene CO (039)', 'Greensville CO (040)', 'Halifax CO (041)', 'Hanover CO (042)',
+            'Henrico CO (043)', 'Henry CO (044)', 'Highland CO (045)', 'Isle of Wight CO (046)', 'James City CO (047)', 'King and Queen CO (049)', 
+            'King George CO (048)', 'King William CO (050)', 'Lancaster CO (051)', 'Lee CO (052)', 'Loudoun CO (053)', 'Louisa CO (054)',
+            'Lunenburg CO (055)', 'Madison CO (056)', 'Mathews CO (057)', 'Mecklenburg CO (058)', 'Middlesex CO (059)', 'Montgomery CO (060)',
+            'Nelson CO (062)', 'New Kent CO (063)', 'Northampton CO (065)', 'Northumberland CO (066)', 'Nottoway CO (067)', 'Orange CO (068)',
+            'Page CO (069)', 'Patrick CO (070)', 'Pittsylvania CO (071)', 'Powhatan CO (072)', 'Prince Edward CO (073)', 'Prince George CO (074)',
+            'Prince William CO (076)', 'Pulaski CO (077)', 'Rappahannock CO (078)', 'Richmond CO (079)', 'Roanoke CO (080)', 'Rockbridge CO (081)',
+            'Rockingham CO (082)', 'Russell CO (083)', 'Scott CO (084)', 'Shenandoah CO (085)', 'Smyth CO (086)', 'Southampton CO (087)',
+            'Spotsylvania CO (088)', 'Stafford CO (089)', 'Surry CO (090)', 'Sussex CO (091)', 'Tazewell CO (092)', 'Warren CO (093)',
+            'Washington CO (095)', 'Westmoreland CO (096)', 'Wise CO (097)', 'Wythe CO (098)', 'York CO (099)', 'Alexandria (100)', 'Bristol (101)',
+            'Buena Vista     (102)', 'Charlottesville (103)', 'Chesapeake (126)', 'Colonial Heights (105)', 'Danville (107)', 'Falls Church (108)',
+            'Franklin City (133)', 'Fredericksburg (109)', 'Galax (110)', 'Hampton (111)', 'Harrisonburg (112)', 'Hopewell (113)',
+            'Lynchburg (114)', 'Manassas (138)', 'Martinsville (115)', 'Newport News (116)', 'Norfolk (117)', 'Norton (130)', 'Petersburg (118)',
+            'Poquoson (143)', 'Portsmouth (119)', 'Radford (131)', 'Richmond City (120)', 'Roanoke City (121)', 'Salem (137)', 'Stauton (123)',
+            'Suffolk (124)', 'Virginia Beach (125)', 'Waynesboro (127)', 'Williamsburg (128)', 'Winchester (129)', 
+            'Covington (106)', 'Manassas Park (139)', 'Fairfax City (132)', 'Emporia (135)', 'Lexington (136)']
 
 fips_codes = ['51001', '51003', '51005', '51007', '51009', '51011', '51013', '51015', '51017', '51019',
               '51021', '51023', '51025', '51027', '51029', '51031', '51033', '51035', '51036', '51037',
@@ -88,7 +81,7 @@ data = pd.concat([data, pd.Series(fips, name = 'FIPS')], axis = 1)
 
 # Bringing in weather data
 
-noaa = pd.read_csv('D:/NOAA/us_data/NOAA_2023.csv')
+noaa = pd.read_csv(direc + 'data/NOAA/us_data/NOAA_2023.csv')
 
 # Adding FIPS codes to noaa
 
@@ -112,7 +105,7 @@ fips = [noaa_fips[list(ner_df.nerds).index(nerd)] for nerd in nerds]
 
 noaa = pd.concat([noaa, pd.Series(fips, name = 'FIPS')], axis = 1)
 
-# Making unified data and weather dates as strings bc hazy
+# Making unified data and weather dates as strings
 
 def data_dates(inp):
     
@@ -146,28 +139,11 @@ data = pd.merge(data, noaa, on = ['Merge_Date', 'FIPS'], how = 'left')
 
 # Bringing in pollution data
 
-pm =  pd.read_csv('D:/EPA/epa_aqs_data_PM.csv')
-pm = pm[pm.Date > 20220000].reset_index(drop = True)
-
-pm10 =  pd.read_csv('D:/EPA/epa_aqs_data_PM10.csv')
-pm10 = pm10[pm10.Date > 20220000].reset_index(drop = True)
-
-o3 =  pd.read_csv('D:/EPA/epa_aqs_data_O3.csv')
-o3 = o3[o3.Date > 20220000].reset_index(drop = True)
-
-no2 =  pd.read_csv('D:/EPA/epa_aqs_data_NO2.csv')
-no2 = no2[no2.Date > 20220000].reset_index(drop = True)
-
-co =  pd.read_csv('D:/EPA/epa_aqs_data_CO.csv')
-co = co[co.Date > 20220000].reset_index(drop = True)
-
-# Subsetting for VA data
-
-pm = pm[pm.State == 51].reset_index(drop = True)
-pm10 = pm10[pm10.State == 51].reset_index(drop = True)
-o3 = o3[o3.State == 51].reset_index(drop = True)
-no2 = no2[no2.State == 51].reset_index(drop = True)
-co = co[co.State == 51].reset_index(drop = True)
+pm =  pd.read_csv(direc + 'data/EPA/epa_aqs_data_PM.csv')
+pm10 =  pd.read_csv(direc + 'data/EPA/epa_aqs_data_PM10.csv')
+o3 =  pd.read_csv(direc + 'data/EPA/epa_aqs_data_O3.csv')
+no2 =  pd.read_csv(direc + 'data/EPA/epa_aqs_data_NO2.csv')
+co =  pd.read_csv(direc + 'data/EPA/epa_aqs_data_CO.csv')
 
 # Adding FIPS to pollution data
 
@@ -366,7 +342,7 @@ data = pd.concat([data, month, year], axis = 1)
 
 # Saving data
 
-data.to_csv(direc + 'data/data_raw.csv', index = False)
+data.to_csv(direc + 'data/data.csv', index = False)
 
 # Creating daily agency-by-jurisdiction stops data
 
@@ -385,6 +361,21 @@ pers = []
 arr = []
 force = []
 fox = []
+jtemp = []
+jmaxt = []
+jmint = []
+jprcp = []
+jprcpb = []
+jpm = []
+jpm10 = []
+jo3 = []
+jco = []
+jno2 = []
+jpmpy = []
+jpm10py = []
+jo3py = []
+jcopy = []
+jno2py = []
 
 for j in tmp.JURISDICTION.unique():
     
@@ -396,7 +387,7 @@ for j in tmp.JURISDICTION.unique():
     
     for ag in ags_x:
         
-        jjtmp = jtmp[jtmp['AGENCY NAME'] == ag]
+        jjtmp = jtmp[jtmp['AGENCY NAME'] == ag].reset_index(drop = True)
         
         for d in days:
             
@@ -419,6 +410,21 @@ for j in tmp.JURISDICTION.unique():
             arr.append(len(arrtmp))
             force.append(len(fortmp))
             fox.append(len(foxtmp))
+            jtemp.append(jjtmp.TEMP[0])
+            jmaxt.append(jjtmp.MAX[0])
+            jmint.append(jjtmp.MIN[0])
+            jprcp.append(jjtmp.PRCP[0])
+            jprcpb.append(int(jjtmp.PRCP[0] > 0))
+            jpm.append(jjtmp.PM[0])
+            jpm10.append(jjtmp.PM10[0])
+            jo3.append(jjtmp.Ozone[0])
+            jco.append(jjtmp.CO[0])
+            jno2.append(jjtmp.NO2[0])
+            jpmpy.append(jjtmp.PM_PY[0])
+            jpm10py.append(jjtmp.PM10_PY[0])
+            jo3py.append(jjtmp.Ozone_PY[0])
+            jcopy.append(jjtmp.CO_PY[0])
+            jno2py.append(jjtmp.NO2_PY[0])
 
 jur = pd.Series(jur, name = 'Jurisdiction')
 ags = pd.Series(ags, name = 'Agency')
@@ -431,8 +437,25 @@ pers = pd.Series(pers, name = 'Persons_Searched')
 arr = pd.Series(arr, name = 'Arrests')
 force = pd.Series(force, name = 'Force_Used')
 fox = pd.Series(fox, name = 'Force_Used_Arrested')
+jtemp = pd.Series(jtemp, name = 'Temperature')
+jmaxt = pd.Series(jmaxt, name = 'Max_Temp')
+jmint = pd.Series(jmint, name = 'Min_Temp')
+jprcp = pd.Series(jprcp, name = 'Precipitation')
+jprcpb = pd.Series(jprcpb, name = 'Precipitation_Bin')
+jpm = pd.Series(jpm, name = 'PM')
+jpm10 = pd.Series(jpm10, name = 'PM10')
+jo3 = pd.Series(jo3, name = 'Ozone')
+jco = pd.Series(jco, name = 'CO')
+jno2 = pd.Series(jno2, name = 'NO2')
+jpmpy = pd.Series(jpmpy, name = 'PM_PY')
+jpm10py = pd.Series(jpm10py, name = 'PM10_PY')
+jo3py = pd.Series(jo3py, name = 'Ozone_PY')
+jcopy = pd.Series(jcopy, name = 'CO_PY')
+jno2py = pd.Series(jno2py, name = 'NO2_PY')
 
-counts = pd.concat([jur, ags, dat, stops, tix, veh, pers, arr, force, fox], axis = 1)
+counts = pd.concat([jur, ags, dat, stops, tix, veh, pers, arr, force, fox,
+                    jtemp, jmaxt, jmint, jprcp, jprcpb, jpm, jpm10, jo3,
+                    jco, jno2, jpmpy, jpm10py, jo3py, jcopy, jno2py], axis = 1)
 
 # Save the counts data
 

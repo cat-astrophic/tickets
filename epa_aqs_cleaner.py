@@ -32,7 +32,7 @@ for folder in folders:
     dates = []
     
     # Data work
-        
+    
     for file in files:
         
         print(file) # Tracking progress
@@ -67,7 +67,7 @@ for folder in folders:
         dates = dates + dates_tmp
     
     # Create a dataframe containing the complete data set
-        
+    
     dates = pd.Series(dates, name = 'Date')
     states = pd.Series(states, name = 'State')
     counties = pd.Series(counties, name = 'County')

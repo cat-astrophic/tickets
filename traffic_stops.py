@@ -17,7 +17,7 @@ data = pd.read_csv(direc + 'data/community-policing-data.csv', error_bad_lines =
 
 # Remove observations from out of sample
 
-keeps = [i for i in range(len(data)) if data.STOP_DATE[i][-4:] == '2023']
+keeps = [i for i in range(len(data)) if data.STOP_DATE[i][-4:] == '2022']
 data = data[data.index.isin(keeps)].reset_index(drop = True)
 
 # Remove observations for drivers under age
@@ -81,7 +81,7 @@ data = pd.concat([data, pd.Series(fips, name = 'FIPS')], axis = 1)
 
 # Bringing in weather data
 
-noaa = pd.read_csv(direc + 'data/NOAA/us_data/NOAA_2023.csv')
+noaa = pd.read_csv(direc + 'data/NOAA/us_data/NOAA_2022.csv')
 
 # Adding FIPS codes to noaa
 
@@ -460,4 +460,5 @@ counts = pd.concat([jur, ags, dat, stops, tix, veh, pers, arr, force, fox,
 # Save the counts data
 
 counts.to_csv(direc + 'data/counts_data.csv', index = False)
+
 
